@@ -1,0 +1,98 @@
+function inversion = confidence_reweight_conjugate_gradient(inversion,A)
+
+m = inversion.mInitVector;
+mapr = inversion.mPriorVector;
+d = inversion.dataObs;
+CN = inversion.maxIteration;
+fmisfit = inversion.fmisfit;
+misfit = inversion.misfit;
+q = inversion.decayCoefficient;
+e = inversion.focusFactor;
+nx = inversion.xGridsNum;
+nz = inversion.zGridsNum;
+gridsNum = inversion.gridsNum;
+reweight = inversion.reweightIndex;
+% gamma = inversion.gamma;
+confFactor = inversion.confidenceFactor;
+lambda = inversion.lambda;
+theta = inversion.theta;
+% eta = inversion.eta;
+
+alpha = zeros(CN,gridsNum);
+% alpha = inversion.alpha;
+reweightBegin = reweight(1);
+reweightEnd = reweight(end);
+F = A;
+Wm = diag(F'*F).^0.25;
+tic;
+for  n=1:CN
+
+    if n > 2 && norm(mapr)^2 - norm(m)^2 > 0.1*norm(m)^2
+        theta(n) = norm(mapr./mw)/((norm(mapr)^2 - norm(m)^2)/norm(m)^2);
+        mapr = mapr/theta(n);
+    end
+
+    if n <= reweightBegin || reweightBegin == 0
+        We = ones(gridsNum,1);
+
+    elseif n <= reweightEnd + 1
+        We = 1./sqrt(mPre.^2+e^2);
+        fprintf('Reweight at iteration %3d \n',n)
+    end
+
+    W = Wm.*We;
+    invW = 1./W;
+    mw = W.*m;
+    maprw = W.*mapr;
+
+    snw = mw - maprw;
+    Fw = F*spdiags(invW,0,length(invW),length(invW));
+    Aw = Fw;
+    rn = Aw*mw-d;
+
+%     if n == 2
+%         alpha(n) = norm(rn)^2/norm(snw)^2;
+%     end
+%     if n > 2
+%         gamma(n) = norm(snw)^2/norm(snwPre)^2;
+%         if gamma(n) > 1
+%              alpha(n) = alpha(n-1)/gamma(n);
+%         else
+%             alpha(n) = alpha(n-1)*q;
+%         end
+%     end
+
+    confFactor(n,:) = generate_confidence_factors(A,m,d,mapr);
+    mapr = inversion.mPriorVector;
+%     lambda = norm(rn)/norm(mw-maprw);
+    alpha(n,:) = lambda*confFactor(n,:);
+
+    misfit(n) = norm(rn)/norm(d);
+    if misfit(n) <= fmisfit && n > reweightEnd + 1; break; end
+    ln = Fw'*rn + alpha(n,:)'.*snw;
+%     ln = Fw'*rn + alpha(n)*snw;
+    if n == 1
+        lln = ln;
+    else
+        beta = (norm(ln))^2/(norm(lnPre))^2;
+        lln = ln + beta*llnPre;
+    end
+
+%     kn = (lln'*ln)/(norm(Fw*lln)^2 + sum(alpha(n,:)'.*lln.^2));
+    kn = (lln'*ln)/(norm(Fw*lln)^2 + norm(alpha(n,:).*lln)^2);
+%     kn = (lln'*ln)/(norm(Fw*lln)^2 + alpha(n)*norm(lln)^2);
+    lnPre = ln;
+    llnPre = lln;
+    
+    mPre = m;
+    mw = mw - kn*lln;
+%     snwPre = mw - maprw;
+    m = invW.*mw;
+    fprintf('Iterration %d\tMisfit = %.8f\n',n,misfit(n));    
+end
+toc;
+fprintf('Iterration %d\tMisfit = %.8f\n',n,misfit(n));
+inversion.mPredictBuffuer = reshape(m,nz,nx);
+inversion.mPredict = inversion.mPredictBuffuer(:,inversion.xIndexPlot);
+inversion.dataPredict = A*m;
+end
